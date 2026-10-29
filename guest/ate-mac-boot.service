@@ -1,0 +1,12 @@
+[Unit]
+Description=Start the Agent Substrate kind cluster
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/ate-mac-boot
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,38 @@
+# Lima template for a short-lived VM that converts the build VM's raw disk to
+# qcow2, so the host doesn't need qemu-img. build-image.sh mounts build/
+# writable with --set.
+
+minimumLimaVersion: 2.0.0
+
+base:
+- template:_images/ubuntu-lts
+
+vmType: vz
+arch: aarch64
+cpus: 4
+memory: 4GiB
+mountType: virtiofs
+
+containerd:
+  system: false
+  user: false
+
+provision:
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    command -v qemu-img >/dev/null 2>&1 && exit 0
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends qemu-utils
+
+probes:
+- script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    if ! timeout 300s bash -c "until command -v qemu-img >/dev/null 2>&1; do sleep 3; done"; then
+      echo >&2 "qemu-img is not installed yet"
+      exit 1
+    fi
+  hint: See "/var/log/cloud-init-output.log" in the guest

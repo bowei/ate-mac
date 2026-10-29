@@ -1,0 +1,44 @@
+# Lima template for the VM the app runs. The app replaces the @...@
+# placeholders. The disk image already holds Docker, the kind cluster and
+# Substrate, so there is no provisioning.
+
+minimumLimaVersion: 2.0.0
+
+images:
+- location: "@IMAGE@"
+  arch: aarch64
+
+vmType: vz
+arch: aarch64
+cpus: @CPUS@
+memory: @MEMORY@
+disk: @DISK@
+mounts: []
+
+containerd:
+  system: false
+  user: false
+
+probes:
+- script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    if ! timeout 120s bash -c "until sudo docker info >/dev/null 2>&1; do sleep 3; done"; then
+      echo >&2 "docker is not running"
+      exit 1
+    fi
+
+# Forward only the docker socket and the kube API server. kubectl-ate reaches
+# ate-api-server by port-forwarding through the API server.
+portForwards:
+- guestSocket: "/var/run/docker.sock"
+  hostSocket: "{{.Dir}}/sock/docker.sock"
+- guestIP: 127.0.0.1
+  guestPort: @APIPORT@
+  hostIP: 127.0.0.1
+- guestIP: 0.0.0.0
+  guestPortRange: [1, 65535]
+  ignore: true
+- guestIP: 127.0.0.1
+  guestPortRange: [1, 65535]
+  ignore: true

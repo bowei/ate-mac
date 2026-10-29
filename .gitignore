@@ -37,3 +37,7 @@ Thumbs.db
 
 # Local worktrees
 /.worktrees/
+
+build/
+app/.build/
+.DS_Store

@@ -1,0 +1,58 @@
+# Lima template for the VM that scripts/build-image.sh provisions and exports.
+# Rootful Docker as in Lima's docker-rootful template, but with no host mounts:
+# the exported disk must not carry fstab entries for mounts the app won't have.
+
+minimumLimaVersion: 2.0.0
+
+base:
+- template:_images/ubuntu-lts
+
+vmType: vz
+arch: aarch64
+cpus: 6
+memory: 12GiB
+# Kept small so the exported image stays small. The app grows it on create.
+disk: 40GiB
+mounts: []
+
+containerd:
+  system: false
+  user: false
+
+provision:
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    command -v docker >/dev/null 2>&1 && exit 0
+    export DEBIAN_FRONTEND=noninteractive
+    curl -fsSL https://get.docker.com | sh
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    mkdir -p /etc/docker
+    cat >/etc/docker/daemon.json <<'EOF'
+    {"features": {"cdi": true, "containerd-snapshotter": true}}
+    EOF
+    systemctl restart docker
+# Lets the Lima user reach the rootful socket, for the probe and for the
+# forwarded socket on the host.
+- mode: yq
+  path: /etc/systemd/system/docker.socket.d/override.conf
+  format: ini
+  expression: .Socket.SocketUser="{{.User}}"
+
+probes:
+- script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    if ! timeout 120s bash -c "until sudo docker info >/dev/null 2>&1; do sleep 3; done"; then
+      echo >&2 "docker is not running"
+      exit 1
+    fi
+  hint: See "/var/log/cloud-init-output.log" in the guest
+
+portForwards:
+- guestSocket: "/var/run/docker.sock"
+  hostSocket: "{{.Dir}}/sock/docker.sock"
