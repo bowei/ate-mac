@@ -1,4 +1,4 @@
-.PHONY: all image app dmg clean
+.PHONY: all image app dmg test clean
 
 all: dmg
 
@@ -10,6 +10,10 @@ app:
 
 dmg: app
 	scripts/build-dmg.sh
+
+test:
+	swift test --package-path app
+	python3 -m unittest discover -s app/Tests/stats
 
 clean:
 	rm -rf build app/.build

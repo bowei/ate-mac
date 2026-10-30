@@ -38,16 +38,18 @@ cp "${LIMACTL}" "${RES}/lima/bin/limactl"
 chmod u+w "${RES}/lima/bin/limactl"
 cp "${LIMA_PREFIX}/share/lima/lima-guestagent.Linux-aarch64.gz" "${RES}/lima/share/lima/"
 
-(cd "${SUBSTRATE_SRC}" && GOOS=darwin GOARCH=arm64 go build -o "${RES}/bin/kubectl-ate" ./cmd/kubectl-ate)
+(cd "${SUBSTRATE_SRC}" && GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" \
+  -o "${RES}/bin/kubectl-ate" ./cmd/kubectl-ate)
 
-cp "${ROOT}/lima/runtime.yaml.tmpl" "${BUILD}/kubeconfig" "${BUILD}/image.env" "${RES}/"
+cp "${ROOT}/lima/runtime.yaml.tmpl" "${ROOT}/app/Resources/ate-mac-stats.py" \
+  "${BUILD}/kubeconfig" "${BUILD}/image.env" "${RES}/"
 # A clone, so the multi-GB image takes no extra space.
 cp -c "${BUILD}/substrate.qcow2" "${RES}/"
 
 ICONSET="${BUILD}/AppIcon.iconset"
 rm -rf "${ICONSET}"
 mkdir -p "${ICONSET}"
-swift "${ROOT}/scripts/make-icon.swift" "${BUILD}/icon.png"
+swift "${ROOT}/scripts/make-icon.swift" "${ROOT}/ate-logo-with-border.png" "${BUILD}/icon.png"
 for s in 16 32 128 256 512; do
   sips -z "${s}" "${s}" "${BUILD}/icon.png" --out "${ICONSET}/icon_${s}x${s}.png" >/dev/null
   sips -z $((s * 2)) $((s * 2)) "${BUILD}/icon.png" --out "${ICONSET}/icon_${s}x${s}@2x.png" >/dev/null

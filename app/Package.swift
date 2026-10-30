@@ -6,5 +6,6 @@ let package = Package(
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(name: "AteMac", path: "Sources/AteMac"),
+        .testTarget(name: "AteMacTests", dependencies: ["AteMac"], path: "Tests/AteMacTests"),
     ]
 )

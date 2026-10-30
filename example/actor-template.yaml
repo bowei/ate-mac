@@ -1,0 +1,28 @@
+# The Substrate side of the example: an ActorTemplate, in the protojson form
+# `kubectl ate create actor-template -f` takes. It is not a Kubernetes
+# object. run.sh replaces @IMAGE@ with the digest-pinned image it pushed;
+# templates require a digest, not a tag.
+metadata:
+  atespace: ate-hello
+  name: hello
+# Run on the workers from workerpool.yaml.
+workerSelector:
+  matchLabels:
+    workload: hello
+containers:
+- name: hello
+  image: "@IMAGE@"
+  # Substrate waits for this to pass before it counts the actor as running,
+  # including after a resume.
+  wakeupProbe:
+    httpGet:
+      path: /readyz
+      port: 80
+# Must fit within the worker limits in workerpool.yaml.
+resources:
+  limits:
+    cpuMillicores: 500
+    memoryBytes: 268435456 # 256Mi
+snapshotConfig:
+  # Snapshot process memory too, so the request count survives suspend.
+  preferredFidelity: SNAPSHOT_FIDELITY_MEMORY

@@ -1,0 +1,36 @@
+# The Kubernetes side of the example: a namespace and a pool of gVisor
+# workers for hello actors to run on. run.sh replaces @WORKER_IMAGE@ with the
+# worker image the bundled cluster already uses.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ate-hello
+
+---
+
+apiVersion: ate.dev/v1
+kind: WorkerPool
+metadata:
+  name: hello
+  namespace: ate-hello
+  labels:
+    # actor-template.yaml selects workers by this label.
+    workload: hello
+spec:
+  # Each actor occupies a whole worker, so this is how many hello actors can
+  # run at once.
+  replicas: 1
+  workerImage: "@WORKER_IMAGE@"
+  sandboxClasses:
+  - name: gvisor
+  template:
+    # Sizes the worker pod and caps what one actor can use. The limits are
+    # the actor's ceiling; the requests are what the scheduler reserves.
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 512Mi
