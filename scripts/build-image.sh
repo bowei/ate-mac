@@ -32,6 +32,9 @@ WITH_DEMO="${WITH_DEMO:-1}"
 WITH_OBSERVABILITY="${WITH_OBSERVABILITY:-0}"
 # Set to 1 to keep the build VM around for debugging.
 KEEP_VM="${KEEP_VM:-0}"
+# Overrides the build VM's memory in lima/build.yaml, which is sized for a
+# 16GiB Mac. Raise it on a Mac with more to spare.
+BUILD_MEMORY="${BUILD_MEMORY:-}"
 
 for tool in limactl kubectl go; do
   if ! command -v "${tool}" >/dev/null; then
@@ -48,9 +51,11 @@ limactl delete --force "${VM}" >/dev/null 2>&1 || true
 # SUBSTRATE_SRC is mounted at its host path, read-only, so a build context the
 # shim passes through means the same thing on both sides. It is set here rather
 # than in build.yaml to keep the exported disk's template free of mounts.
-limactl start --name="${VM}" --tty=false \
-  --set ".mounts = [{\"location\": \"${SUBSTRATE_SRC}\", \"mountPoint\": \"${SUBSTRATE_SRC}\", \"writable\": false}]" \
-  "${ROOT}/lima/build.yaml"
+vm_set=".mounts = [{\"location\": \"${SUBSTRATE_SRC}\", \"mountPoint\": \"${SUBSTRATE_SRC}\", \"writable\": false}]"
+if [[ -n "${BUILD_MEMORY}" ]]; then
+  vm_set+=" | .memory = \"${BUILD_MEMORY}\""
+fi
+limactl start --name="${VM}" --tty=false --set "${vm_set}" "${ROOT}/lima/build.yaml"
 
 # Everything below, and everything the Substrate flow shells out to, reaches
 # the VM's daemon through scripts/shim/docker. DOCKER_HOST is deliberately not
@@ -70,8 +75,15 @@ echo "==> Installing Substrate"
 export ATE_INSTALL_KIND=true
 export KO_DOCKER_REPO="localhost:${REGISTRY_PORT}"
 export NO_DEV_ENV=true
-go run ./cmd/ate-setup deploy ate-system --credential-provider='{"name":"k8s.io"}' \
-  --ingress-allowed-spiffe-ids=spiffe://cluster.local/ns/ate-system/sa/atenet-client
+# This image only ever boots on Apple Silicon, so build one architecture. The
+# VM's buildkit offers only linux/arm64 anyway: nothing registers a QEMU binfmt
+# handler in it, so an amd64 stage of the envoy-dataplane Dockerfile cannot run.
+export KO_DEFAULTPLATFORMS=linux/arm64
+# --ingress-allowed-spiffe-ids is gone from ate-setup; the router takes its
+# allowed IDs from manifests/ate-install/atenet-router.yaml, and only
+# --ingress-auth-mode=static-mtls requires any. The default mode,
+# deprecated-insecure, is what this install has always ended up with.
+go run ./cmd/ate-setup deploy ate-system --credential-provider='{"name":"k8s.io"}'
 
 echo "==> Slimming the cluster"
 # Prints the image IDs the matching pods run, such as
@@ -109,8 +121,10 @@ if [[ "${WITH_OBSERVABILITY}" != "1" ]]; then
   kubectl delete namespace otel-system
   rmi_node ${otel_images[@]+"${otel_images[@]}"}
 fi
-# The second replicas only matter for availability on a real cluster.
-kubectl -n ate-system scale deployment ate-api-server ate-idp-server --replicas=1
+# The second replicas only matter for availability on a real cluster. Substrate
+# no longer installs ate-idp-server, and currently ships every ate-system
+# deployment at one replica already, so this is belt and braces.
+kubectl -n ate-system scale deployment ate-api-server --replicas=1
 # The bucket-init job ran once at install.
 read -ra job_images <<<"$(pod_image_ids -n ate-system -l batch.kubernetes.io/job-name=rustfs-bucket-init | tr '\n' ' ')"
 kubectl -n ate-system delete job rustfs-bucket-init --cascade=foreground

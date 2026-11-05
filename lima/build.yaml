@@ -12,7 +12,11 @@ base:
 vmType: vz
 arch: aarch64
 cpus: 6
-memory: 12GiB
+# Leaves room for macOS on a 16GiB Mac. At 12GiB the VM went down during the
+# envoy-dataplane cargo build, the heaviest part of the install. Only the build
+# VM is sized here; the app sizes its own from lima/runtime.yaml.tmpl. Raise it
+# with BUILD_MEMORY on a Mac with more to spare.
+memory: 8GiB
 # Kept small so the exported image stays small. The app grows it on create.
 disk: 40GiB
 mounts: []
