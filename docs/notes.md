@@ -17,10 +17,16 @@ Quitting the app leaves the VM running. Use Stop and Quit to stop it too.
 
 ## How it works
 
-- `lima/build.yaml` is the build VM: Ubuntu with rootful Docker, no host mounts.
-- `guest/` is installed into the image. `ate-mac-boot.service` starts the kind
-  node and then the registry on every boot, and restores the sysctls that a
-  node restart loses.
+- `lima/build.yaml` is the build VM: Ubuntu with rootful Docker, and no host
+  mounts beyond the Substrate checkout that `build-image.sh` adds for the
+  duration of the build.
+- `scripts/shim/docker` is the `docker` the build sees. It runs docker in the
+  build VM over `limactl shell`, so the Mac needs no container CLI.
+- `guest/` is installed into the image. `ate-ctr` is the container engine the
+  image carries; the boot service, `ate-mac-stats.py` and the app all call it
+  instead of `docker`, so moving to another engine is a change to `ate-ctr` and
+  `lima/build.yaml`. `ate-mac-boot.service` starts the kind node and then the
+  registry on every boot, and restores the sysctls that a node restart loses.
 - `app/Resources/ate-mac-stats.py` ships in the app. The app pipes it into the
   guest on every poll to get each pod's health, CPU and memory, and the VM's
   CPU and memory. A pod counts as healthy when Kubernetes reports it Ready and

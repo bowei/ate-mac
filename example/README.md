@@ -5,6 +5,10 @@ Substrate actor on the Substrate app's cluster. It only needs the app (running,
 with the icon filled in) and the `docker` and `kubectl` CLIs on the Mac. You
 don't need a Docker daemon or a Substrate checkout.
 
+Unlike `make image`, this one really does need `docker`: it drives the daemon in
+the app's VM over the forwarded socket, and podman's CLI speaks its own API
+rather than Docker's, so it cannot stand in here.
+
 ```sh
 example/run.sh
 ```

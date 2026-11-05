@@ -304,7 +304,7 @@ final class Controller: ObservableObject {
 
     /// The last lines a container logged, or an error message.
     func logs(namespace: String, pod: String, container: String, previous: Bool = false) async -> String {
-        var args = ["docker", "exec", "kind-control-plane", "kubectl", "--kubeconfig=/etc/kubernetes/admin.conf",
+        var args = ["ate-ctr", "exec", "kind-control-plane", "kubectl", "--kubeconfig=/etc/kubernetes/admin.conf",
                     "logs", "-n", namespace, pod, "-c", container, "--tail=300"]
         if previous { args.append("--previous") }
         let r = await lima.guest(args, timeout: 20)

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Runs the container engine the image was built with.
+#
+# The boot service, ate-mac-stats.py and the app all go through this, so what
+# engine the image carries is a property of the image rather than of its
+# callers.
+exec /usr/bin/docker "$@"

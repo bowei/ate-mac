@@ -1,6 +1,8 @@
 # Lima template for the VM that scripts/build-image.sh provisions and exports.
 # Rootful Docker as in Lima's docker-rootful template, but with no host mounts:
 # the exported disk must not carry fstab entries for mounts the app won't have.
+# build-image.sh adds one mount, the Substrate checkout, with --set and removes
+# it again before the export.
 
 minimumLimaVersion: 2.0.0
 
@@ -14,6 +16,7 @@ memory: 12GiB
 # Kept small so the exported image stays small. The app grows it on create.
 disk: 40GiB
 mounts: []
+mountType: virtiofs
 
 containerd:
   system: false

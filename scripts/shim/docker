@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# A stand-in for the docker CLI that runs docker inside the build VM, so
+# building the image needs no container CLI on the Mac.
+#
+# build-image.sh prepends this directory to PATH, so kind,
+# hack/create-kind-cluster.sh and ate-setup all reach the VM's daemon through
+# it without knowing. ATE_SHIM_VM, ATE_SHIM_ROOT and LIMA_HOME come from
+# build-image.sh.
+#
+# The daemon has always run in the VM; what changes is that a build context is
+# now read in the guest rather than streamed from a client on the Mac. That is
+# why the build VM mounts the Substrate checkout at its host path, and why only
+# paths under that checkout can be passed to docker. A host path outside it
+# (docker cp, -v, a build context elsewhere) does not resolve in the guest.
+set -o errexit -o nounset -o pipefail
+
+: "${ATE_SHIM_VM:?set by build-image.sh to the build VM name}"
+
+# Keeps relative paths, such as a build context, resolving as they would on the
+# Mac. Only the Substrate checkout is mounted, so anywhere else runs from /.
+workdir="/"
+case "${PWD}/" in
+  "${ATE_SHIM_ROOT:-/nonexistent}"/*) workdir="${PWD}" ;;
+esac
+
+# sudo because the daemon is rootful, as in the probe in lima/build.yaml.
+# DOCKER_HOST and DOCKER_CONTEXT are dropped rather than carried into the
+# guest: a caller that sets either means a socket on the Mac, and the docker
+# below wants the guest's own. limactl shell without --preserve-env and sudo's
+# env_reset both already do this; being explicit keeps it from depending on
+# either.
+exec limactl shell --tty=false --workdir "${workdir}" "${ATE_SHIM_VM}" \
+  sudo env -u DOCKER_HOST -u DOCKER_CONTEXT docker "$@"

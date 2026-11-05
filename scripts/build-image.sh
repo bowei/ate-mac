@@ -6,6 +6,11 @@
 # ate-setup deploy. ko builds the images on this Mac and pushes them to the
 # registry inside the VM. Finally it stops the VM and exports its disk.
 #
+# The Mac needs no container CLI: scripts/shim/docker goes on PATH and runs
+# docker in the VM, which is where the daemon has always been. The VM mounts
+# SUBSTRATE_SRC at its host path so build contexts resolve there, and the mount
+# is undone before the export.
+#
 # Outputs, in build/:
 #   substrate.qcow2   the disk image
 #   kubeconfig        admin kubeconfig for the cluster, context "ate-mac"
@@ -28,7 +33,7 @@ WITH_OBSERVABILITY="${WITH_OBSERVABILITY:-0}"
 # Set to 1 to keep the build VM around for debugging.
 KEEP_VM="${KEEP_VM:-0}"
 
-for tool in limactl docker kubectl go; do
+for tool in limactl kubectl go; do
   if ! command -v "${tool}" >/dev/null; then
     echo "error: ${tool} not found" >&2
     exit 1
@@ -40,9 +45,20 @@ export LIMA_HOME="${BUILD}/lima"
 
 echo "==> Creating build VM '${VM}'"
 limactl delete --force "${VM}" >/dev/null 2>&1 || true
-limactl start --name="${VM}" --tty=false "${ROOT}/lima/build.yaml"
+# SUBSTRATE_SRC is mounted at its host path, read-only, so a build context the
+# shim passes through means the same thing on both sides. It is set here rather
+# than in build.yaml to keep the exported disk's template free of mounts.
+limactl start --name="${VM}" --tty=false \
+  --set ".mounts = [{\"location\": \"${SUBSTRATE_SRC}\", \"mountPoint\": \"${SUBSTRATE_SRC}\", \"writable\": false}]" \
+  "${ROOT}/lima/build.yaml"
 
-export DOCKER_HOST="unix://${LIMA_HOME}/${VM}/sock/docker.sock"
+# Everything below, and everything the Substrate flow shells out to, reaches
+# the VM's daemon through scripts/shim/docker. DOCKER_HOST is deliberately not
+# set: the shim's docker runs in the guest, where the forwarded host socket
+# path does not exist. The VM still forwards it to
+# "${LIMA_HOME}/${VM}/sock/docker.sock" for a Docker API client on the Mac.
+export ATE_SHIM_VM="${VM}" ATE_SHIM_ROOT="${SUBSTRATE_SRC}"
+export PATH="${ROOT}/scripts/shim:${PATH}"
 export KUBECONFIG="${BUILD}/kubeconfig"
 rm -f "${KUBECONFIG}"
 
@@ -112,11 +128,12 @@ fi
 SUBSTRATE_REV="$(git -C "${SUBSTRATE_SRC}" describe --always --dirty)"
 
 echo "==> Installing boot service"
-for f in ate-mac-boot.sh ate-mac-boot.service wait-online-any.conf; do
+for f in ate-ctr ate-mac-boot.sh ate-mac-boot.service wait-online-any.conf; do
   limactl copy "${ROOT}/guest/${f}" "${VM}:/tmp/${f}"
 done
 limactl shell --workdir / "${VM}" sudo bash -c '
   set -o errexit
+  install -m 0755 /tmp/ate-ctr /usr/local/bin/ate-ctr
   install -m 0755 /tmp/ate-mac-boot.sh /usr/local/bin/ate-mac-boot
   install -m 0644 /tmp/ate-mac-boot.service /etc/systemd/system/ate-mac-boot.service
   install -D -m 0644 /tmp/wait-online-any.conf /etc/systemd/system/systemd-networkd-wait-online.service.d/any.conf
@@ -158,6 +175,26 @@ limactl shell --workdir / "${VM}" sudo bash -c '
   find /usr/share/locale -mindepth 1 -maxdepth 1 ! -name "en*" -exec rm -rf {} +
   journalctl --vacuum-size=1M
 '
+
+echo "==> Removing the Substrate mount"
+# Puts the disk back to the "no host mounts" lima/build.yaml describes, since
+# the app's VM does not have this one. The mount point goes too, so the image
+# keeps no trace of where it was built. Nothing may reach the guest's docker
+# after this: the build context is no longer there to read.
+limactl shell --workdir / "${VM}" sudo bash -c '
+  set -o errexit
+  src="$1"
+  if grep -qF "${src}" /etc/fstab; then
+    # errexit stops here rather than installing an empty fstab if the filtered
+    # file somehow comes out with no lines left.
+    grep -vF "${src}" /etc/fstab > /tmp/fstab.new
+    install -m 0644 /tmp/fstab.new /etc/fstab
+    rm -f /tmp/fstab.new
+  fi
+  systemctl daemon-reload
+  umount -l "${src}" 2>/dev/null || true
+  rmdir -p "${src}" 2>/dev/null || true
+' bash "${SUBSTRATE_SRC}"
 
 echo "==> Exporting disk"
 limactl shell --workdir / "${VM}" sudo fstrim -av

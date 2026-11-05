@@ -23,8 +23,8 @@ probes:
 - script: |
     #!/bin/bash
     set -eux -o pipefail
-    if ! timeout 120s bash -c "until sudo docker info >/dev/null 2>&1; do sleep 3; done"; then
-      echo >&2 "docker is not running"
+    if ! timeout 120s bash -c "until sudo ate-ctr info >/dev/null 2>&1; do sleep 3; done"; then
+      echo >&2 "the container engine is not running"
       exit 1
     fi
 

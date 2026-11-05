@@ -12,8 +12,9 @@ sandbox class is not available.
 
 ## Build
 
-Needs `limactl`, `docker` (the CLI only), `kubectl`, Go, and Xcode, plus a
-Substrate checkout at `../s` (or set `SUBSTRATE_SRC`).
+Needs `limactl`, `kubectl`, Go, and Xcode, plus a Substrate checkout at `../s`
+(or set `SUBSTRATE_SRC`). No container CLI on the Mac: the build runs docker
+inside the VM, so a Mac with podman, or with nothing at all, builds the image.
 
 ```sh
 make image   # slow: builds a VM, installs Substrate into it, exports its disk
@@ -31,6 +32,13 @@ and `ate-setup deploy ate-system --kind`) against the Docker daemon in a Lima
 VM under `build/lima`. It then exports the VM disk as `build/substrate.qcow2`,
 converting it in a second, short-lived Lima VM so the host needs no qemu.
 `WITH_DEMO=0` leaves out the counter demo. `KEEP_VM=1` keeps the build VM.
+
+The daemon runs in that VM, and so does the `docker` the build calls:
+`scripts/shim/docker` goes on `PATH` and forwards each command over `limactl
+shell`, which is why the Mac needs no `docker`. Since a build context is then
+read in the guest, the build VM mounts the Substrate checkout at its host path
+and drops the mount again before the export. Passing docker a host path outside
+that checkout does not work.
 
 The build slims the cluster for a laptop. It removes kind's observability stack
 (the otel collector, Prometheus and Jaeger) and turns telemetry export off,

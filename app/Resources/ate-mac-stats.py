@@ -37,7 +37,7 @@ COMPONENT_KINDS = ("Deployment", "DaemonSet", "StatefulSet")
 
 def node_json(*args):
     out = subprocess.run(
-        ["docker", "exec", NODE, *args], capture_output=True, check=True, timeout=10
+        ["ate-ctr", "exec", NODE, *args], capture_output=True, check=True, timeout=10
     ).stdout
     return json.loads(out)
 
