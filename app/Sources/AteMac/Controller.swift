@@ -25,13 +25,30 @@ final class Controller: ObservableObject {
     @Published var newImage = false
     /// The latest stats from the guest, while it is running.
     @Published var stats: GuestStats?
-    /// The status panel is open, so poll more often.
-    var panelVisible = false {
-        didSet { if panelVisible && !oldValue { Task { if !busy { await poll() } } } }
+    /// Recent VM CPU and memory use, oldest first, for the charts.
+    @Published var history: [Sample] = []
+    /// Actors and actor templates, fetched only while the window is open.
+    @Published var actors: [AteAPI.Actor]?
+    @Published var templates: [AteAPI.Template]?
+    /// The status window is open, so poll more often and fetch the extra detail.
+    var windowVisible = false {
+        didSet { if windowVisible && !oldValue { Task { if !busy { await poll() } } } }
     }
 
+    struct Sample: Identifiable {
+        let time: Date
+        let cpuPercent: Double
+        let memoryFraction: Double
+        var id: Date { time }
+    }
+
+    static let historyLength = 60
+
     let paths = Paths()
+    /// The bundled image's image.env: API_PORT, SUBSTRATE_REV and IMAGE_ID.
+    private(set) var imageInfo: [String: String] = [:]
     private lazy var lima = Lima(paths: paths)
+    private lazy var ateAPI = AteAPI(paths: paths)
     private var busy = false
 
     private let statusTimeout: TimeInterval = 20
@@ -47,7 +64,8 @@ final class Controller: ObservableObject {
         Prefs.register()
         try? FileManager.default.createDirectory(at: paths.state, withIntermediateDirectories: true)
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-        let image = (try? readImageEnv())?["IMAGE_ID"] ?? "?"
+        imageInfo = (try? readImageEnv()) ?? [:]
+        let image = imageInfo["IMAGE_ID"] ?? "?"
         log("app: started, version \(version), image \(image), state in \(paths.state.path)")
 
         let ws = NSWorkspace.shared.notificationCenter
@@ -188,7 +206,7 @@ final class Controller: ObservableObject {
     private func pollLoop() async {
         while true {
             if !busy { await poll() }
-            try? await Task.sleep(for: .seconds(panelVisible ? 2 : 5))
+            try? await Task.sleep(for: .seconds(windowVisible ? 2 : 5))
         }
     }
 
@@ -205,6 +223,7 @@ final class Controller: ObservableObject {
             if phase != .failed { phase = .notCreated }
             newImage = false
             stats = nil
+            clearDetail()
             return
         case "Running":
             if watchdog.gaveUp { return }
@@ -220,10 +239,14 @@ final class Controller: ObservableObject {
                     unresponsiveSince = nil
                 }
                 watchdog.responsive()
-                if let s = try? JSONDecoder().decode(GuestStats.self, from: Data(lastLine(r.output).utf8)) {
+                if let s = try? GuestStats.decode(Data(lastLine(r.output).utf8)) {
                     stats = s
                     ready = s.ready
                     detail = s.summary
+                    record(s.vm)
+                    if windowVisible && s.ready {
+                        await fetchSubstrateObjects()
+                    }
                 } else {
                     let unreadable = "unreadable status, see Show Log"
                     if detail != unreadable {
@@ -247,9 +270,46 @@ final class Controller: ObservableObject {
             if phase != .failed { phase = .stopped }
             ready = false
             stats = nil
+            clearDetail()
         }
         let installed = (try? String(contentsOf: paths.installedImage, encoding: .utf8)) ?? ""
         newImage = installed != ((try? readImageEnv())?["IMAGE_ID"] ?? "")
+    }
+
+    /// Forgets what only makes sense while the VM runs.
+    private func clearDetail() {
+        history = []
+        actors = nil
+        templates = nil
+    }
+
+    private func record(_ vm: GuestStats.VM) {
+        history.append(Sample(
+            time: Date(), cpuPercent: vm.cpuPercent,
+            memoryFraction: Double(vm.memoryUsedBytes) / Double(max(vm.memoryTotalBytes, 1))))
+        if history.count > Controller.historyLength {
+            history.removeFirst(history.count - Controller.historyLength)
+        }
+    }
+
+    /// Fetches actors and templates. A failed call leaves the last result in
+    /// place, so a slow ate-api-server doesn't blank the list.
+    private func fetchSubstrateObjects() async {
+        async let actors = ateAPI.actors()
+        async let templates = ateAPI.templates()
+        let (a, t) = await (actors, templates)
+        if let a { self.actors = a }
+        if let t { self.templates = t }
+    }
+
+    /// The last lines a container logged, or an error message.
+    func logs(namespace: String, pod: String, container: String, previous: Bool = false) async -> String {
+        var args = ["docker", "exec", "kind-control-plane", "kubectl", "--kubeconfig=/etc/kubernetes/admin.conf",
+                    "logs", "-n", namespace, pod, "-c", container, "--tail=300"]
+        if previous { args.append("--previous") }
+        let r = await lima.guest(args, timeout: 20)
+        if r.status == CommandResult.timedOut { return "Timed out fetching logs." }
+        return r.output.isEmpty ? "(no output)" : r.output
     }
 
     /// Logs the overall status, each pod's health, and the new-image hint when

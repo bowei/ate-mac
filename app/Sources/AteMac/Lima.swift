@@ -25,11 +25,8 @@ struct Paths {
     var log: URL { state.appendingPathComponent("app.log") }
 }
 
-struct CommandResult {
-    static let timedOut: Int32 = -2
-
-    let status: Int32
-    let output: String
+extension Paths {
+    var kubectlAte: URL { binDir.appendingPathComponent("kubectl-ate") }
 }
 
 /// Runs the bundled limactl with LIMA_HOME pointing at the state directory.
@@ -42,53 +39,8 @@ struct Lima {
     /// runs ssh as a child) once the timeout passes, and returns timedOut.
     func run(_ args: [String], input: Data? = nil, timeout: TimeInterval? = nil,
              logOutput: Bool = true) async -> CommandResult {
-        let paths = self.paths
-        return await Task.detached {
-            let p = Process()
-            p.executableURL = paths.limactl
-            p.arguments = args
-            var env = ProcessInfo.processInfo.environment
-            env["LIMA_HOME"] = paths.limaHome.path
-            p.environment = env
-            let pipe = Pipe()
-            p.standardOutput = pipe
-            p.standardError = pipe
-            let stdin = Pipe()
-            p.standardInput = input == nil ? FileHandle.nullDevice : stdin
-            let command = "limactl \(args.joined(separator: " "))"
-            let began = Date()
-            if logOutput { Log.append(paths.log, "\(command): started") }
-            do {
-                try p.run()
-            } catch {
-                Log.append(paths.log, "\(command): could not run: \(error)")
-                return CommandResult(status: -1, output: "\(error)")
-            }
-            if let input {
-                stdin.fileHandleForWriting.write(input)
-                try? stdin.fileHandleForWriting.close()
-            }
-            var timer: DispatchWorkItem?
-            if let timeout {
-                let pid = p.processIdentifier
-                let item = DispatchWorkItem { Lima.killTree(pid) }
-                DispatchQueue.global().asyncAfter(wallDeadline: .now() + timeout, execute: item)
-                timer = item
-            }
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            p.waitUntilExit()
-            timer?.cancel()
-            let out = String(decoding: data, as: UTF8.self)
-            let took = Log.duration(since: began)
-            if p.terminationReason == .uncaughtSignal {
-                if logOutput { Log.append(paths.log, "\(command): timed out after \(took)\n\(Log.indent(out))") }
-                return CommandResult(status: CommandResult.timedOut, output: out)
-            }
-            if logOutput {
-                Log.append(paths.log, "\(command): exit \(p.terminationStatus) after \(took)\n\(Log.indent(out))")
-            }
-            return CommandResult(status: p.terminationStatus, output: out)
-        }.value
+        await Command.run(paths.limactl, args, environment: ["LIMA_HOME": paths.limaHome.path],
+                          input: input, timeout: timeout, log: logOutput ? paths.log : nil)
     }
 
     /// The instance status, such as "Running" or "Stopped", or nil if it doesn't exist.
@@ -103,14 +55,5 @@ struct Lima {
     func guest(_ args: [String], input: Data? = nil, timeout: TimeInterval) async -> CommandResult {
         await run(["shell", "--workdir", "/", Lima.instance, "sudo"] + args,
                   input: input, timeout: timeout, logOutput: false)
-    }
-
-    private static func killTree(_ pid: pid_t) {
-        let pkill = Process()
-        pkill.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-        pkill.arguments = ["-KILL", "-P", String(pid)]
-        try? pkill.run()
-        pkill.waitUntilExit()
-        kill(pid, SIGKILL)
     }
 }

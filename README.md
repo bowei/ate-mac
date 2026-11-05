@@ -43,13 +43,32 @@ observability stack.
 Drag `Substrate.app` to Applications. The app is ad-hoc signed, so the first
 time, right-click it and choose Open.
 
-Click the menu bar icon to open the status panel:
+Click the menu bar icon to open the status window. While it's open, the app
+has a Dock icon and shows up in Cmd-Tab. Right-click the icon for a short menu:
+Start or Stop, Restart, Copy Shell Setup, Show Log and Quit. The icon fills in
+once every pod in `ate-system` is healthy, and shows a warning triangle when an
+action fails.
 
-- The panel shows the VM's CPU and memory, and each pod's health, CPU and
-  memory, grouped into Substrate, Workers and Kubernetes. It refreshes every
-  2 seconds while open.
+The window refreshes every 2 seconds while it's open. Its sections are:
+
+- **Overview**: the VM's CPU, memory and disk use, with a short history chart,
+  uptime and the image version. It also shows how many components in each
+  group are healthy, the WorkerPools, actor counts, recent warnings, and a
+  tile for each Substrate component.
+- **Components**, **Workers** and **Kubernetes**: one row per Deployment,
+  DaemonSet or StatefulSet, plus pods that nothing owns. Each row shows its
+  health, ready replicas, restarts, CPU, memory and age. A component that isn't
+  healthy says why, such as which container fails its readiness probe. Select
+  a row to see its pods and containers, its warning events and a container's
+  logs. Workers also lists the WorkerPools.
+- **Actors**: actor templates and actors in every atespace, read through the
+  bundled `kubectl-ate` while the window is open and Substrate is ready.
+- **Events**: the last 50 warning events in the cluster.
+
+The buttons in the window header and sidebar:
+
 - **Start** creates the VM from the bundled image on first use, then boots it.
-  The icon fills in once every pod in `ate-system` is healthy.
+  On first use the window opens by itself.
 - **Copy Shell Setup** copies the `KUBECONFIG` and `PATH` exports for
   `kubectl` and the bundled `kubectl-ate`.
 - **Restart** stops the VM, forcing it if the guest doesn't shut down, and

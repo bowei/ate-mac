@@ -1,17 +1,14 @@
 import AppKit
 import SwiftUI
 
+/// The menu bar icon and the status window are AppKit, in AppDelegate, so a
+/// left click can open a window and a right click a menu. SwiftUI only
+/// provides the Settings window and the app's main menu.
 @main
 struct AteMacApp: App {
-    @StateObject private var controller = Controller()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
-        MenuBarExtra {
-            StatusPanel(controller: controller)
-        } label: {
-            Image(systemName: controller.ready ? "shippingbox.fill" : "shippingbox")
-        }
-        .menuBarExtraStyle(.window)
         Settings {
             SettingsView()
         }
